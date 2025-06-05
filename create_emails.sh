@@ -82,14 +82,13 @@ EOF
 
 chmod 600 "$msmtp_config"
 
-# 发送邮件
-{
-    echo "To: $recipient_email"
-    echo "From: $sender_email"
-    echo "Subject: 邮箱列表"
-    echo
-    echo "请查收以下邮箱列表："
-    cat "$output_file"
-} | msmtp -t
+# 配置 mutt 使用 msmtp 作为发送后端
+muttrc_config="$HOME/.muttrc"
+if ! grep -q 'set sendmail="/usr/bin/msmtp"' "$muttrc_config" 2>/dev/null; then
+    echo 'set sendmail="/usr/bin/msmtp"' >> "$muttrc_config"
+fi
 
-echo "邮件已发送到 $recipient_email"
+# 发送带附件的邮件
+echo "请查收附件中的邮箱列表。" | mutt -e "set from=$sender_email" -s "邮箱列表" -a "$output_file" -- "$recipient_email"
+
+echo "邮件已发送到 $recipient_email（附件方式）"
