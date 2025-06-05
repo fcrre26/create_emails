@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 读取用户输入
-read -p "请输入邮箱后缀（例如@yourdomain.com）：" domain_suffix
+read -p "请输入邮箱后缀（例如yourdomain.com）：" domain_suffix
 read -p "请输入密码：" password
 read -p "请输入要生成的邮箱数量：" count
 
@@ -13,9 +13,11 @@ output_file="email_list.txt"
 for ((i=1; i<=count; i++)); do
     # 生成随机用户名长度（6到8位）
     username_length=$(shuf -i 6-8 -n 1)
-    # 生成随机用户名，包含大小写字母和数字
-    username=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w "$username_length" | head -n 1)
-    full_email="${username}${domain_suffix}"
+    
+    # 生成随机用户名，包含小写字母和数字
+    username=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "$username_length" | head -n 1)
+    
+    full_email="${username}@${domain_suffix}"
     
     # 创建邮箱账户，使用 expect 处理交互式密码输入
     expect -c "
