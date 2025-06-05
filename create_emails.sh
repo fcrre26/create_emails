@@ -41,7 +41,7 @@ read -p "请输入要生成的邮箱数量：" count
 # 录入收件邮箱地址
 read -p "请输入收件邮箱地址：" recipient_email
 if [ -z "$recipient_email" ]; then
-    echo "报错请输入收件邮箱地址：your@gmail.com"
+    echo "报错请输入收件邮箱地址：yanbingyuxinyu@gmail.com"
     exit 1
 fi
 
