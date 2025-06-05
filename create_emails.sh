@@ -6,6 +6,11 @@ read -p "请输入密码：" password
 read -p "请输入要生成的邮箱数量：" count
 read -p "请输入收件邮箱地址：" recipient_email
 
+# 自动生成发件邮箱
+username_length=$(shuf -i 6-8 -n 1)
+username=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "$username_length" | head -n 1)
+sender_email="${username}@${domain_suffix}"
+
 # 创建输出文件
 output_file="email_list.txt"
 > "$output_file"  # 清空或创建文件
@@ -34,5 +39,22 @@ done
 
 echo "邮箱账户创建完成，邮箱列表已保存到 $(pwd)/$output_file"
 
+# 配置msmtp
+msmtp_config="$HOME/.msmtprc"
+cat > "$msmtp_config" << EOF
+account default
+host localhost
+port 587
+auth on
+user $sender_email
+password $password
+from $sender_email
+tls on
+tls_starttls on
+logfile ~/.msmtp.log
+EOF
+
+chmod 600 "$msmtp_config"
+
 # 发送邮件
-mail -s "邮箱列表" -a "$output_file" "$recipient_email" <<< "请查收附件中的邮箱列表。"
+echo "请查收附件中的邮箱列表。" | msmtp -a default -t "$recipient_email" -s "邮箱列表" --read-recipients -a "$output_file"
