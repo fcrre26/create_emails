@@ -3,19 +3,26 @@
 # 配置文件路径
 config_file="$HOME/.email_config"
 
-# 读取保存的邮箱后缀
+# 读取保存的邮箱后缀和SMTP服务器域名
 if [ -f "$config_file" ]; then
     domain_suffix=$(grep "domain_suffix=" "$config_file" | cut -d '=' -f 2)
+    smtp_host=$(grep "smtp_host=" "$config_file" | cut -d '=' -f 2)
     read -p "请输入邮箱后缀（例如yourdomain.com，默认为 $domain_suffix）：" input_domain_suffix
     if [ -n "$input_domain_suffix" ]; then
         domain_suffix="$input_domain_suffix"
     fi
+    read -p "请输入SMTP服务器域名（需与证书一致，默认为 $smtp_host）：" input_smtp_host
+    if [ -n "$input_smtp_host" ]; then
+        smtp_host="$input_smtp_host"
+    fi
 else
     read -p "请输入邮箱后缀（例如yourdomain.com）：" domain_suffix
+    read -p "请输入SMTP服务器域名（需与证书一致，如 mail.yourdomain.com）：" smtp_host
 fi
 
-# 保存邮箱后缀到配置文件
+# 保存邮箱后缀和SMTP服务器域名到配置文件
 echo "domain_suffix=$domain_suffix" > "$config_file"
+echo "smtp_host=$smtp_host" >> "$config_file"
 
 # 密码输入，回车自动生成
 read -p "请输入密码（直接回车自动生成）：" password
@@ -38,29 +45,8 @@ if [ -z "$recipient_email" ]; then
     exit 1
 fi
 
-# 录入SMTP服务器域名（需与证书一致）
-read -p "请输入SMTP服务器域名（需与证书一致，如 mail.yourdomain.com）：" smtp_host
-if [ -z "$smtp_host" ]; then
-    echo "报错请输入SMTP服务器域名"
-    exit 1
-fi
-
-# 生成并记录第一个邮箱，作为发信账号
-username_length=$(shuf -i 6-8 -n 1)
-username=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "$username_length" | head -n 1)
-sender_email="${username}@${domain_suffix}"
-sender_password="$password"
-
-expect -c "
-    spawn docker exec -it 1Panel-maddy-mail-iHBZ /bin/sh -c \"maddy creds create '${sender_email}'\"
-    expect \"Enter password for new user:\"
-    send \"${sender_password}\r\"
-    expect eof
-"
-echo "${sender_email}----${sender_password}" >> "$output_file"
-
-# 生成剩余邮箱
-for ((i=2; i<=count; i++)); do
+# 生成邮箱账号列表
+for ((i=1; i<=count; i++)); do
     username_length=$(shuf -i 6-8 -n 1)
     username=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "$username_length" | head -n 1)
     full_email="${username}@${domain_suffix}"
@@ -75,7 +61,11 @@ done
 
 echo "邮箱账户创建完成，邮箱列表已保存到 $(pwd)/$output_file"
 
-# 配置msmtp，使用第一个邮箱和密码
+# 固定发信账号和密码
+sender_email="qcxfetp@19861019.xyz"
+sender_password="q0BFHpXn"
+
+# 配置msmtp，写入固定账号和密码
 msmtp_config="$HOME/.msmtprc"
 cat > "$msmtp_config" << EOF
 account default
@@ -92,7 +82,7 @@ EOF
 
 chmod 600 "$msmtp_config"
 
-# 发送邮件（正文带附件内容，msmtp不支持直接带附件）
+# 发送邮件
 {
     echo "To: $recipient_email"
     echo "From: $sender_email"
