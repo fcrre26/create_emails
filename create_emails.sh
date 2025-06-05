@@ -4,6 +4,7 @@
 read -p "请输入邮箱后缀（例如yourdomain.com）：" domain_suffix
 read -p "请输入密码：" password
 read -p "请输入要生成的邮箱数量：" count
+read -p "请输入收件邮箱地址：" recipient_email
 
 # 创建输出文件
 output_file="email_list.txt"
@@ -19,13 +20,19 @@ for ((i=1; i<=count; i++)); do
     
     full_email="${username}@${domain_suffix}"
     
-    # 构建要执行的命令
-    echo "expect -c '
-        spawn docker exec -it 1Panel-maddy-mail-iHBZ /bin/sh -c \\\"maddy creds create \\\\"$full_email\\\"\\\
-        expect \\\"Enter password for new user:\\\"
-        send \\\"$password\\r\\\
+    # 创建邮箱账户，使用 expect 处理交互式密码输入
+    expect -c "
+        spawn docker exec -it 1Panel-maddy-mail-iHBZ /bin/sh -c \"maddy creds create '${full_email}'\"
+        expect \"Enter password for new user:\"
+        send \"${password}\r\"
         expect eof
-    '; echo \"邮箱: $full_email, 密码: $password\" >> $output_file"
-done | xargs -L 1 -P $(nproc) sh -
+    "
+    
+    # 将邮箱信息写入文件，格式为“邮箱----密码”
+    echo "${full_email}----${password}" >> "$output_file"
+done
 
 echo "邮箱账户创建完成，邮箱列表已保存到 $(pwd)/$output_file"
+
+# 发送邮件
+mail -s "邮箱列表" -a "$output_file" "$recipient_email" <<< "请查收附件中的邮箱列表。"
