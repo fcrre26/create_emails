@@ -3,13 +3,6 @@
 # 配置文件路径
 config_file="$HOME/.email_config"
 
-# 先输入收件邮箱地址
-read -p "请输入收件邮箱地址：" recipient_email
-if [ -z "$recipient_email" ]; then
-    echo "报错请输入收件邮箱地址：yanbingyuxinyu@gmail.com"
-    exit 1
-fi
-
 # 读取保存的邮箱后缀
 if [ -f "$config_file" ]; then
     domain_suffix=$(grep "domain_suffix=" "$config_file" | cut -d '=' -f 2)
@@ -24,16 +17,11 @@ fi
 # 保存邮箱后缀到配置文件
 echo "domain_suffix=$domain_suffix" > "$config_file"
 
-# 读取密码选择
-read -p "是否自动生成密码？（输入1自动生成，输入其他手动输入）：" password_choice
-
-if [ "$password_choice" = "1" ]; then
-    # 自动生成8位随机密码
+# 密码输入，回车自动生成
+read -p "请输入密码（直接回车自动生成）：" password
+if [ -z "$password" ]; then
     password=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 8 | head -n 1)
     echo "生成的密码为：$password"
-else
-    # 手动输入密码
-    read -p "请输入密码：" password
 fi
 
 # 自动生成发件邮箱（使用第一个生成的邮箱作为发件邮箱）
@@ -47,6 +35,14 @@ output_file="email_list.txt"
 
 # 在容器内部创建邮箱账户
 read -p "请输入要生成的邮箱数量：" count
+
+# 录入收件邮箱地址
+read -p "请输入收件邮箱地址：" recipient_email
+if [ -z "$recipient_email" ]; then
+    echo "报错请输入收件邮箱地址：your@yourdomain.com"
+    exit 1
+fi
+
 for ((i=1; i<=count; i++)); do
     # 生成随机用户名长度（6到8位）
     username_length=$(shuf -i 6-8 -n 1)
