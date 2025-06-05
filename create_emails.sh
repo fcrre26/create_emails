@@ -24,11 +24,6 @@ if [ -z "$password" ]; then
     echo "生成的密码为：$password"
 fi
 
-# 自动生成发件邮箱（使用第一个生成的邮箱作为发件邮箱）
-username_length=$(shuf -i 6-8 -n 1)
-username=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "$username_length" | head -n 1)
-sender_email="${username}@${domain_suffix}"
-
 # 创建输出文件
 output_file="email_list.txt"
 > "$output_file"  # 清空或创建文件
@@ -50,26 +45,37 @@ if [ -z "$smtp_host" ]; then
     exit 1
 fi
 
-for ((i=1; i<=count; i++)); do
-    # 生成随机用户名长度（6到8位）
+# 生成并记录第一个邮箱，作为发信账号
+username_length=$(shuf -i 6-8 -n 1)
+username=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "$username_length" | head -n 1)
+sender_email="${username}@${domain_suffix}"
+sender_password="$password"
+
+expect -c "
+    spawn docker exec -it 1Panel-maddy-mail-iHBZ /bin/sh -c \"maddy creds create '${sender_email}'\"
+    expect \"Enter password for new user:\"
+    send \"${sender_password}\r\"
+    expect eof
+"
+echo "${sender_email}----${sender_password}" >> "$output_file"
+
+# 生成剩余邮箱
+for ((i=2; i<=count; i++)); do
     username_length=$(shuf -i 6-8 -n 1)
-    # 生成随机用户名，包含小写字母和数字
     username=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "$username_length" | head -n 1)
     full_email="${username}@${domain_suffix}"
-    # 创建邮箱账户，使用 expect 处理交互式密码输入
     expect -c "
         spawn docker exec -it 1Panel-maddy-mail-iHBZ /bin/sh -c \"maddy creds create '${full_email}'\"
         expect \"Enter password for new user:\"
         send \"${password}\r\"
         expect eof
     "
-    # 将邮箱信息写入文件，格式为“邮箱----密码”
     echo "${full_email}----${password}" >> "$output_file"
 done
 
 echo "邮箱账户创建完成，邮箱列表已保存到 $(pwd)/$output_file"
 
-# 配置msmtp，使用手动录入的smtp_host
+# 配置msmtp，使用第一个邮箱和密码
 msmtp_config="$HOME/.msmtprc"
 cat > "$msmtp_config" << EOF
 account default
@@ -77,7 +83,7 @@ host $smtp_host
 port 587
 auth on
 user $sender_email
-password $password
+password $sender_password
 from $sender_email
 tls on
 tls_starttls on
