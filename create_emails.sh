@@ -41,7 +41,7 @@ read -p "请输入要生成的邮箱数量：" count
 # 录入收件邮箱地址
 read -p "请输入收件邮箱地址：" recipient_email
 if [ -z "$recipient_email" ]; then
-    echo "报错请输入收件邮箱地址：yanbingyuxinyu@gmail.com"
+    echo "报错请输入收件邮箱地址：your@gmail.com"
     exit 1
 fi
 
@@ -56,7 +56,7 @@ for ((i=1; i<=count; i++)); do
         send \"${password}\r\"
         expect eof
     "
-    echo "${full_email}----${password}" >> "$output_file"
+    echo "${full_email}----${password}----587" >> "$output_file"
 done
 
 echo "邮箱账户创建完成，邮箱列表已保存到 $(pwd)/$output_file"
