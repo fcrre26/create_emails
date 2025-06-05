@@ -39,7 +39,14 @@ read -p "请输入要生成的邮箱数量：" count
 # 录入收件邮箱地址
 read -p "请输入收件邮箱地址：" recipient_email
 if [ -z "$recipient_email" ]; then
-    echo "报错请输入收件邮箱地址：your@yourdomain.com"
+    echo "报错请输入收件邮箱地址：yanbingyuxinyu@gmail.com"
+    exit 1
+fi
+
+# 录入SMTP服务器域名（需与证书一致）
+read -p "请输入SMTP服务器域名（需与证书一致，如 mail.yourdomain.com）：" smtp_host
+if [ -z "$smtp_host" ]; then
+    echo "报错请输入SMTP服务器域名"
     exit 1
 fi
 
@@ -62,11 +69,11 @@ done
 
 echo "邮箱账户创建完成，邮箱列表已保存到 $(pwd)/$output_file"
 
-# 配置msmtp
+# 配置msmtp，使用手动录入的smtp_host
 msmtp_config="$HOME/.msmtprc"
 cat > "$msmtp_config" << EOF
 account default
-host localhost
+host $smtp_host
 port 587
 auth on
 user $sender_email
