@@ -60,7 +60,7 @@ for ((i=1; i<=count; i++)); do
 
     # 通过标准输入将密码传递给 maddy creds create 命令
     # -i 保持 STDIN 开放，-T 禁用 TTY 分配，/bin/sh -c 执行命令
-    echo "$password" | docker exec -i -T "$maddy_container" /bin/sh -c "maddy creds create '${full_email}'"
+    echo "$password" | docker exec -i "$maddy_container" /bin/sh -c "maddy creds create '${full_email}'"
 
     # 将生成的账号和使用的密码记录到输出文件
     echo "${full_email}----${password}----587" >> "$output_file"
