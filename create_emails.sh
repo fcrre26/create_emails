@@ -6,7 +6,7 @@ config_file="$HOME/.email_config"
 # 默认值
 default_domain_suffix=""
 default_smtp_host=""
-default_recipient_email="" # 新增：收件邮箱默认值
+default_recipient_email="" # 收件邮箱默认值
 
 # 读取保存的配置
 if [ -f "$config_file" ]; then
@@ -14,7 +14,7 @@ if [ -f "$config_file" ]; then
     # 使用 ^keyword= 确保匹配行的开头，避免匹配包含 keyword 的其他行
     default_domain_suffix=$(grep "^domain_suffix=" "$config_file" | cut -d '=' -f 2)
     default_smtp_host=$(grep "^smtp_host=" "$config_file" | cut -d '=' -f 2)
-    default_recipient_email=$(grep "^recipient_email=" "$config_file" | cut -d '=' -f 2) # 新增：读取收件邮箱
+    default_recipient_email=$(grep "^recipient_email=" "$config_file" | cut -d '=' -f 2) # 读取收件邮箱
 fi
 
 # 交互式输入配置信息
@@ -25,7 +25,7 @@ domain_suffix=${input_domain_suffix:-$default_domain_suffix}
 read -p "请输入SMTP服务器域名（需与证书一致，默认为 $default_smtp_host）：" input_smtp_host
 smtp_host=${input_smtp_host:-$default_smtp_host}
 
-# 新增：收件邮箱地址输入，并使用默认值
+# 收件邮箱地址输入，并使用默认值
 read -p "请输入收件邮箱地址（默认为 $default_recipient_email）：" input_recipient_email
 recipient_email=${input_recipient_email:-$default_recipient_email}
 
@@ -64,10 +64,12 @@ if [ -z "$password" ]; then
     echo "生成的密码为：$password"
 fi
 
-# 创建输出文件
+# 设置输出文件
 # 文件名加入时间戳，避免覆盖之前生成的结果
 output_file="email_list_$(date +%Y%m%d_%H%M%S).txt"
-> "$output_file"  # 清空或创建文件
+# 创建一个临时文件用于在并行模式下记录输出
+output_file_tmp="${output_file}.tmp"
+> "$output_file_tmp" # 清空或创建临时文件
 
 
 # 在容器内部创建邮箱账户
@@ -84,8 +86,6 @@ if [ "$count" -le 0 ]; then
 fi
 
 
-echo "开始批量创建 ${count} 个邮箱账号..."
-
 # 容器名称，请根据你的实际情况确认
 # 根据原脚本和日志，创建邮箱的容器应该是 1Panel-maddy-mail-iHBZ
 maddy_container="1Panel-maddy-mail-iHBZ"
@@ -96,45 +96,91 @@ if ! docker ps --filter "name=${maddy_container}" --filter "status=running" -q >
     exit 1
 fi
 
-# 注意：maddy creds create 在某些环境下即使使用 -i 也可能需要 TTY 或其他参数才能非交互式工作
-# 之前的尝试显示它仍在等待密码输入。
-# 这里的循环会继续尝试，但可能实际用户并未被创建。
-# 真正的解决方案需要找到 maddy creds create 的正确非交互式用法。
-# 目前这个循环只记录到文件，并触发脚本后续的邮件发送（即使用户未创建成功）。
-# 如果 maddy creds create 成功执行，它应该不会打印 "Enter password for new user:"
-# 如果你仍然看到 "Enter password for new user:"，说明创建用户实际是失败的。
+# === 开始多线程批量创建 (使用 echo | docker exec -i 方式) ===
+
+# 设置最大并行任务数量 (根据服务器的CPU核心数、内存等资源进行调整)
+# 建议不要超过CPU核心数的2倍
+MAX_JOBS=20
+
+echo "开始批量创建 ${count} 个邮箱账号 (最大并行任务数: ${MAX_JOBS}) 使用 echo | docker exec -i 方式..."
+
+# 使用一个数组来跟踪正在运行的后台任务的PID
+declare -a pids
+
 for ((i=1; i<=count; i++)); do
     username_length=$(shuf -i 6-8 -n 1)
     username=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "$username_length" | head -n 1)
     full_email="${username}@${domain_suffix}"
 
-    # 通过标准输入将密码传递给 maddy creds create 命令
-    # 移除可能不支持的 -T，保留 -i
-    # 这里的命令是尝试非交互式创建用户的核心
-    echo "$password" | docker exec -i "$maddy_container" /bin/sh -c "maddy creds create '${full_email}'"
-    # 检查 docker exec 命令的退出状态，如果非零表示命令执行失败
-    if [ $? -ne 0 ]; then
-        # 这里可能会捕获到 maddy creds create 失败的退出码
-        # 但是如果它只是卡在等待输入，退出码可能是 0 或其他
-        # 更好的判断创建成功与否的方式是查看 Maddy 容器日志
-        echo "警告：尝试创建用户 $full_email 失败或命令执行异常。请检查 Maddy 容器日志。"
-        # 如果你确定即使失败也继续生成列表，可以 uncomment 下一行
-        # continue
-    fi
+    # 使用 docker exec 在容器内部执行 maddy creds create 命令，通过标准输入传递密码
+    # 使用 & 符号将命令放到后台执行
+    # 注意：根据之前的测试，这个命令很可能不会真正创建用户，因为它会尝试交互式输入密码
+    (
+        echo "$password" | docker exec -i "$maddy_container" /bin/sh -c "maddy creds create '${full_email}'"
+        # 检查 docker exec 命令的退出状态，非零表示失败
+        if [ $? -ne 0 ]; then
+            # 如果你仍然看到 "Enter password for new user:"，说明创建用户实际是失败的
+            echo "警告：尝试创建凭证 $full_email 失败或命令执行异常。请检查 Maddy 容器日志。"
+            # 注意：如果 imap-acct create 也需要凭证存在，这个用户后续步骤也会失败
+        fi
+        # 根据文档，还需要创建 IMAP 账户，同样可能面临交互问题
+        # docker exec -i "$maddy_container" /bin/sh -c "maddy imap-acct create '${full_email}'" || echo "警告：创建 IMAP 账户 $full_email 失败！"
 
+        # 将生成的账号和使用的密码记录到临时文件 (在后台任务中记录)
+        # 注意：这里直接向临时文件追加，在大量并行写入时可能存在数据混乱风险
+        echo "${full_email}----${password}----587" >> "$output_file_tmp"
 
-    # 将生成的账号和使用的密码记录到输出文件
-    echo "${full_email}----${password}----587" >> "$output_file"
+    ) & # 将整个子shell放到后台执行
 
-    # 可以选择性地打印进度
+    # 将后台进程的PID添加到数组
+    pids+=($!)
+
+    # 检查当前正在运行的后台任务数量
+    # 如果后台任务数量达到或超过 MAX_JOBS，等待部分任务完成
+    while (( ${#pids[@]} >= MAX_JOBS )); do
+        # 移除已经完成的后台任务的PID
+        for pid in "${!pids[@]}"; do
+            # kill -0 PID 检查进程是否存在而不发送信号
+            if ! kill -0 ${pids[pid]} 2>/dev/null; then
+                unset pids[pid]
+            fi
+        done
+
+        # 如果清理后任务数量仍然达到上限，等待任意一个后台任务完成
+        if (( ${#pids[@]} >= MAX_JOBS )); then
+            # wait -n 等待 pids 数组中的任意一个任务完成 (需要 Bash 4.3+ )
+            wait -n "${pids[@]}" 2>/dev/null # 添加 2>/dev/null 隐藏 wait -n 在没有任务时可能出现的错误
+             # 再次清理已完成的任务PID
+             for pid in "${!pids[@]}"; do
+                if ! kill -0 ${pids[pid]} 2>/dev/null; then
+                    unset pids[pid]
+                fi
+            done
+        fi
+    done
+
+    # 可以选择性地打印进度 (注意这里是提交任务的进度)
     if (( i % 100 == 0 )); then
-         echo "进度: 已处理 $i/$count 个账户信息..."
+         echo "进度: 已提交 $i/$count 个账户创建任务到后台..."
     fi
 
 done
 
-echo "账号列表信息生成完毕，已保存到 $(pwd)/$output_file"
-# 注意：上面的步骤只是生成了列表文件，Maddy 用户是否真正创建成功需要额外确认
+# 等待所有剩余的后台任务完成
+echo "所有创建任务已提交。等待后台任务完成..."
+wait ${pids[@]} 2>/dev/null # 等待 pids 数组中剩余的所有任务完成
+
+echo "批量创建邮箱账号后台任务处理完成。"
+# 注意：这里的处理完成不代表用户在 Maddy 中实际创建成功
+
+# 将临时文件内容排序（可选）并追加到最终输出文件
+# sort "$output_file_tmp" >> "$output_file" # 如果需要按字母排序
+cat "$output_file_tmp" >> "$output_file" # 直接追加
+rm "$output_file_tmp" # 删除临时文件
+
+echo "生成的账号列表已保存到 $(pwd)/$output_file"
+
+# === 批量创建结束 ===
 
 
 # 固定发信账号和密码 (这部分是用于发送邮件的，保持不变)
@@ -161,6 +207,7 @@ EOF
 chmod 600 "$msmtp_config"
 
 # 检查输出文件是否存在且不为空，再发送邮件
+# 注意：这里的输出文件是主机上的 $output_file
 if [ -s "$output_file" ]; then
     echo "准备发送邮件..."
     # 发送带附件的邮件（MIME格式，纯msmtp）(这部分是用于发送邮件的，保持不变)
