@@ -49,8 +49,11 @@ fi
 
 echo "开始批量创建 ${count} 个邮箱账号..."
 
-# 容器名称，请根据你的实际情况确认，之前的日志显示是 1Panel-mysql-Kwkv，
-# 但创建邮箱是maddy，根据原脚本是 1Panel-maddy-mail-iHBZ
+# === 修改部分：批量非交互式创建邮箱账号 ===
+
+echo "开始批量创建 ${count} 个邮箱账号..."
+
+# 容器名称，请根据你的实际情况确认
 maddy_container="1Panel-maddy-mail-iHBZ"
 
 for ((i=1; i<=count; i++)); do
@@ -59,7 +62,7 @@ for ((i=1; i<=count; i++)); do
     full_email="${username}@${domain_suffix}"
 
     # 通过标准输入将密码传递给 maddy creds create 命令
-    # -i 保持 STDIN 开放，-T 禁用 TTY 分配，/bin/sh -c 执行命令
+    # -i 保持 STDIN 开放，移除不支持的 -T
     echo "$password" | docker exec -i "$maddy_container" /bin/sh -c "maddy creds create '${full_email}'"
 
     # 将生成的账号和使用的密码记录到输出文件
@@ -71,6 +74,8 @@ for ((i=1; i<=count; i++)); do
 done
 
 echo "邮箱账户创建完成，账号列表已保存到 $(pwd)/$output_file"
+
+# === 修改部分结束 ===
 
 # === 修改部分结束 ===
 
