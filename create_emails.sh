@@ -24,8 +24,8 @@ fi
 echo "domain_suffix=$domain_suffix" > "$config_file"
 echo "smtp_host=$smtp_host" >> "$config_file"
 
-# 密码输入，回车自动生成
-read -p "请输入密码（直接回车自动生成）：" password
+# 密码输入，回车自动生成 (这个密码将用于所有生成的邮箱账户)
+read -p "请输入要创建的邮箱账户的密码（直接回车自动生成）：" password
 if [ -z "$password" ]; then
     password=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 8 | head -n 1)
     echo "生成的密码为：$password"
@@ -38,34 +38,48 @@ output_file="email_list.txt"
 # 在容器内部创建邮箱账户
 read -p "请输入要生成的邮箱数量：" count
 
-# 录入收件邮箱地址
+# 录入收件邮箱地址 (用于发送包含列表的邮件)
 read -p "请输入收件邮箱地址：" recipient_email
 if [ -z "$recipient_email" ]; then
-    echo "报错请输入收件邮箱地址：mail.yourdomain.com）"
+    echo "错误：请输入收件邮箱地址！"
     exit 1
 fi
 
-# 生成邮箱账号列表
+# === 修改部分：批量非交互式创建邮箱账号 ===
+
+echo "开始批量创建 ${count} 个邮箱账号..."
+
+# 容器名称，请根据你的实际情况确认，之前的日志显示是 1Panel-mysql-Kwkv，
+# 但创建邮箱是maddy，根据原脚本是 1Panel-maddy-mail-iHBZ
+maddy_container="1Panel-maddy-mail-iHBZ"
+
 for ((i=1; i<=count; i++)); do
     username_length=$(shuf -i 6-8 -n 1)
     username=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w "$username_length" | head -n 1)
     full_email="${username}@${domain_suffix}"
-    expect -c "
-        spawn docker exec -it 1Panel-maddy-mail-iHBZ /bin/sh -c \"maddy creds create '${full_email}'\"
-        expect \"Enter password for new user:\"
-        send \"${password}\r\"
-        expect eof
-    "
+
+    # 通过标准输入将密码传递给 maddy creds create 命令
+    # -i 保持 STDIN 开放，-T 禁用 TTY 分配，/bin/sh -c 执行命令
+    echo "$password" | docker exec -i -T "$maddy_container" /bin/sh -c "maddy creds create '${full_email}'"
+
+    # 将生成的账号和使用的密码记录到输出文件
     echo "${full_email}----${password}----587" >> "$output_file"
+
+    # 可以选择性地打印进度
+    # echo "已创建 $i/$count: $full_email"
+
 done
 
-echo "邮箱账户创建完成，邮箱列表已保存到 $(pwd)/$output_file"
+echo "邮箱账户创建完成，账号列表已保存到 $(pwd)/$output_file"
 
-# 固定发信账号和密码
+# === 修改部分结束 ===
+
+
+# 固定发信账号和密码 (这部分是用于发送邮件的，保持不变)
 sender_email="qcxfetp@19861019.xyz"
 sender_password="q0BFHpXn"
 
-# 配置msmtp，写入固定账号和密码
+# 配置msmtp，写入固定账号和密码 (这部分是用于发送邮件的，保持不变)
 msmtp_config="$HOME/.msmtprc"
 cat > "$msmtp_config" << EOF
 account default
@@ -82,7 +96,7 @@ EOF
 
 chmod 600 "$msmtp_config"
 
-# 发送带附件的邮件（MIME格式，纯msmtp）
+# 发送带附件的邮件（MIME格式，纯msmtp）(这部分是用于发送邮件的，保持不变)
 boundary="ZZ_$(date +%s)_ZZ"
 {
     echo "To: $recipient_email"
